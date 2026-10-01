@@ -301,7 +301,8 @@ model carved from successive segmentations resolved both, verified visually:
 complete coverage, no artefacts.
 
 The height ladder algorithm was my coding agent's design. Here's a nice ASCII visual of what's going on with the lotion bottle:
-'''
+
+```
         ##          nozzle
         ##
     ########
@@ -324,7 +325,8 @@ The height ladder algorithm was my coding agent's design. Here's a nice ASCII vi
           nozzle cell is tall,
           body cells are short,
           empty cells are zero
-'''
+```
+
 
 **Held up — multiple planes**, including scenes with **17 detected planes** and
 the object spanning 3. **Held up — thermal degradation and recovery.**
