@@ -309,6 +309,7 @@ The height ladder algorithm was my coding agent's design. Here's a nice ASCII vi
     ########        body
     ########
   ──────────────    support plane
+  0 1 2 3 4 5 6    cell numbers
 
 
        /##\
@@ -320,10 +321,10 @@ The height ladder algorithm was my coding agent's design. Here's a nice ASCII vi
      swallows scene on both sides
 
    cell:  1  2  3  4  5  6
-   h:     0  0  9  9  0  0
+   h:     0  5  9  9  5  0
                 ^
-          nozzle cell is tall,
-          body cells are short,
+          nozzle cell is tall, and
+          body shoulders are shorter.
           empty cells are zero
 ```
 
