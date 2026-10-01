@@ -1,6 +1,6 @@
 # non-LiDAR-Diminished-Reality-on-iPhone
 A diminished reality (DR) app that reprojects camera pixels and uses image inpainting to make real 3D objects disappear on an iPhone augmented reality (AR) app.
-
+[§3](#3-model-and-approach-selection)
 Removing a real object from a live camera view, convincingly, completely offline,
 on an iPhone 13. 
 
