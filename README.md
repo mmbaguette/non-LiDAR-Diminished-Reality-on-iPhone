@@ -4,7 +4,7 @@ A diminished reality (DR) app that reprojects camera pixels and uses image inpai
 Removing a real object from a live camera view, convincingly, completely offline,
 on an iPhone 13. 
 
-This experienced taught me to use coding agents to code and design platforms myself, that would typically require a team of experienced software developers to develop.
+This experienced taught me to use coding agents create projects that would typically require a team of experienced software developers to develop.
 
 Documentation only — no source is published. Implementation was written with AI
 assistance. What is mine, and what this document records, is the constraint
