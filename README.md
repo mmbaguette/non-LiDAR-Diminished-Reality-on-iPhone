@@ -44,7 +44,7 @@ I picked constraints that remove the usual shortcuts:
 - **60 fps preview**, regardless of what else runs.
 - **Commercially clean.** Every shipped component must be usable commercially
   without negotiation, with no budget for model training or legal counsel.
-  This removed the best-performing inpainting model from contention (§3, §6).
+  This removed the best-performing inpainting model from contention ([§3](#3), [§6](#6)).
 
 ---
 
