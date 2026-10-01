@@ -281,6 +281,12 @@ objects crowding the target.
 
 ### On device
 
+
+<img width="1170" height="2532" alt="image" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
+
+*A water bottle with cheap diffusion inpainting where its bottom covers the floor (green), and real-pixel reprojection where its tall silhouette previously covered the rest of the ground (red).*
+
+
 **The test that mattered most was object variation**. Simple convex objects —
 cups, bottles, boxes — worked consistently. Flicker appeared
 only on a lotion bottle with a pump on top and on headphones. By varying object shape
