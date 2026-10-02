@@ -4,7 +4,7 @@ A diminished reality (DR) app that reprojects camera pixels and uses image inpai
 Removing a real object from a live camera view, convincingly, completely offline,
 on an iPhone 13. 
 
-This experienced taught me to use coding agents create projects that would typically require a team of experienced software developers to develop.
+This experience taught me to use coding agents to build projects beyond what I could have accomplished alone.
 
 Documentation only — no source is published. Implementation was written with AI
 assistance. What is mine, and what this document records, is the constraint
@@ -44,7 +44,7 @@ I picked constraints that remove the usual shortcuts:
 - **60 fps preview**, regardless of what else runs.
 - **Commercially clean.** Every shipped component must be usable commercially
   without negotiation, with no budget for model training or legal counsel.
-  This removed the best-performing inpainting model from contention ([§3](#3-model-and-approach-selection), 6](#6)).
+  This removed the best-performing inpainting model from contention ([§3](#3-model-and-approach-selection), [§6](#6-licensing-and-patents)).
 
 ---
 
@@ -94,11 +94,11 @@ frames, and it reports absence as distinct from failure. Acting on that
 distinction is what stops the object being painted into its own replacement.
 
 Two mask requirements came out of inpainting tests rather than segmentation
-tests (§5): the mask has to be grown to swallow adjacent fine detail such as
+tests ([§5](#5-evaluation)): the mask has to be grown to swallow adjacent fine detail such as
 printed text, and masks of neighbouring objects have to be subtracted so the
 fill does not eat an object that is only partly covered.
 
-These were the coding agent's design choices based on the testing I peformed.
+These were the coding agent's design choices based on the testing I performed.
 
 ### Inpainting
 
@@ -119,17 +119,17 @@ weights could ship commercially.
 | MI-GAN | Light AI inpainter; poor, distracting infills in each test | Reference only — same training-data issue as LaMa |
 | PatchMatch | slow, but effective | Rejected — patent live to ~2029 |
 | G'MIC | unacceptable quality compared to other patch matching algorithms  | Rejected — copyleft licence blocks closed-source use |
-| PixMix (Herling & Broll) | Not implemented as a fill method. | Rejected — see §6 |
+| PixMix (Herling & Broll) | Not implemented as a fill method. | Rejected — see [§6](#6-licensing-and-patents) |
 
 Classical fills are cheap and unencumbered but reproduce texture rather than
 structure. LaMa reproduces structure, which is what floors and walls mostly
-are — and cannot ship (§6). So LaMa is kept as the quality ceiling: the thing
+are — and cannot ship ([§6](#6-licensing-and-patents)). So LaMa is kept as the quality ceiling: the thing
 the commercial fills are measured against, not the thing tuned for.
 
-The on-device inpainting figures in §9 are LaMa, converted to Core ML at three
+The on-device inpainting figures in [§9](#9-benchmarks) are LaMa, converted to Core ML at three
 resolutions.
 
-The intended auto-selection startegy between the two commercial fill algorithms, Criminisi and OpenCV shift-map, 
+The intended auto-selection strategy between the two commercial fill algorithms, Criminisi and OpenCV shift-map, 
 is driven by the pixels around
 the hole: gradient energy and local variance measured on the known ring of
 pixels around the mask choose between diffusion (smooth surroundings) and an
@@ -137,14 +137,14 @@ exemplar method (repeating texture). Though this hasn't been implemented yet.
 
 ### Depth
 
-[**Depth Anything V2 Small** is Apache 2.0, the Large variant CC-BY-NC
+**Depth Anything V2 Small** is Apache 2.0, the Large variant CC-BY-NC
 and therefore unusable commercially. The scope is deliberately narrow — depth
 is needed *once*, at removal, to establish which surface an object stands on 
-(this solves the undetected surfaces problem, see (§5). A
+(this should solve the undetected-surfaces failure in [§5](#5-evaluation)). A
 one-shot question needs no temporal stability and no per-frame budget, which is
 a far easier problem.
 
-These were the coding agent's design, but I'm currently rethinking my entire inpainting strategy. 
+These were the coding agent's design. 
 
 ---
 
@@ -282,9 +282,9 @@ objects crowding the target.
 ### On device
 
 
-<img width="1170" height="2532" alt="image" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
+<img width="350" alt="Water bottle removal: diffusion fill at the base, real-pixel reprojection behind it" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
 
-*A water bottle with cheap diffusion inpainting where its bottom covers the floor (green), and real-pixel reprojection where its tall silhouette previously covered the rest of the ground (red).*
+*DR on a water bottle, with cheap diffusion inpainting where its bottom covers the floor (green), and real-pixel reprojection where its tall silhouette previously covered the rest of the ground (red).*
 
 
 **The test that mattered most was object variation**. Simple convex objects —
@@ -300,32 +300,42 @@ object visible through its own replacement. Replacing it with a per-cell height
 model carved from successive segmentations resolved both, verified visually:
 complete coverage, no artefacts.
 
-The height ladder algorithm was my coding agent's design. Here's a nice ASCII visual of what's going on with the lotion bottle:
+The per-cell height model was my coding agent's design. Side view of the lotion bottle, one row per unit of height:
 
 ```
-        ##          nozzle
-        ##
-    ########
-    ########        body
-    ########
-  ──────────────    support plane
-  0 1 2 3 4 5 6    cell numbers
+               ######         nozzle
+               ######
+               ######
+               ######
+            ############
+            ############      body
+            ############
+            ############
+            ############
+       ────────────────────── support plane
+   cell:  1  2  3  4  5  6
 
+Convex hull: one volume around the whole object
 
-       /##\
-     /######\       hull bridges
-   /##########\     nozzle to body
-   ##############
-  ──────────────
-     ^^^^      ^^^^
-     swallows scene on both sides
+               ######
+              .######.
+             ..######..       . = scene covered by the hull
+            ...######...      but not by the object
+            ############
+            ############
+            ############
+            ############
+            ############
+       ────────────────────── support plane
+
+Per-cell height model: one height per cell
 
    cell:  1  2  3  4  5  6
    h:     0  5  9  9  5  0
-                ^
-          nozzle cell is tall, and
-          body shoulders are shorter.
-          empty cells are zero
+
+   Nozzle cells store the nozzle top (9), shoulder
+   cells store the body top (5), empty cells store 0.
+   The step from 5 to 9 is what a hull cannot keep.
 ```
 
 
@@ -403,7 +413,7 @@ never granted, verified against patent records:
 finished. One that lapsed for unpaid fees can, in some circumstances, be
 reinstated. I accepted lapses that are years old and treated PixMix as
 off-limits because its most recent family member lapsed months before I
-checked. It cost little: only three ideas from the paper were used (§3), none
+checked. It cost little: only three ideas from the paper were used, none
 of them its fill method.
 
 **Implementation licences are a separate check from method patents.** The
@@ -429,12 +439,12 @@ resetting the model's memory. The figure was right; the inference about real
 usage was not.
 
 **Under-instrumented for too long.** Conclusions had to be discarded because the
-logs could not support them. Thermal state without timings are uninterpretable. Log lines without elapsed time cannot answer
+logs could not support them. Thermal state without timings is uninterpretable. Log lines without elapsed time cannot answer
 "how long until it throttles," and I caught that question being answered anyway,
 from a line count times an assumed interval. Both were one-line fixes that
 should have existed before the first measurement.
 
-**Testing don't always represent baseline performance.** A debug overlay defaulting to on meant every
+**Test conditions don't always represent baseline performance.** A debug overlay defaulting to on meant every
 session, including every measurement session, paid for it — and because it was on
 during all of them, its cost to memory and thermal state looked like baseline performance. 
 
@@ -449,7 +459,7 @@ so the reference model can only be reached manually.
 
 ## 8. Skills
 
-- **Agentic coding** to achieve things that would typically require a team of expert engineers.
+- **Agentic coding** to achieve things beyond what I could have accomplished alone.
 - **Computer vision under hard constraints** — segmentation, stateful tracking,
   inpainting, plane estimation, occlusion, and the trade-offs between them on a
   fixed compute and memory budget.
@@ -495,13 +505,12 @@ iPhone 13 (A15, 4 GB, no LiDAR), release builds.
 | **Per pass** | **~500 ms** | **~208 ms** |
 | Model set on disk | 76 MB | 40 MB |
 | Cold load | 1.5–2.2 s | 13.6–17.0 s |
-| Warm load | 2-2.5 s | 6.0 s |
+| Warm load | - | 6.0 s |
 | Passes in ~9.5 min, uncapped | ~180 | ~780 |
 | Effective rate, uncapped | 0.31 Hz | 1.37 Hz |
 | First removal to `serious` | ~3:30 | ~6:00 |
 | Peak footprint | 931 MB | 677 MB |
 | Correlation vs reference | 7e-5 match | 0.98 |
-Note: ANE (Apple Neural Engine is designed to support FP16 weights. FP32 counterintuitively takes less time to load because it didn't load on ANE but only CPU.
 
 Per-stage fp32 sizes: 22, 21, 19, 9, 5 MB.
 
@@ -520,9 +529,10 @@ warnings mid-inference, causing ANE to abandon processing.
 ### Inpainting — commercial candidates
 
 | Method | Time at 512 |
-| --- | --- | --- |
-| Criminisi | 0.7-2 s |
-| Shift-map | 1.5-2 s |
+| --- | --- |
+| Criminisi | 0.7–2 s |
+| Shift-map | 1.5–2 s |
+
 Note: The thermal state (a hot iPhone) dramatically affects processing time.
 
 ### Removal stages
