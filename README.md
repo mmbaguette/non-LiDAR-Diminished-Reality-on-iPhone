@@ -184,13 +184,6 @@ feeds two features; with both switched off, so the tracker does not run between
 removals, the thermal state barely climbs. With either on it reaches `serious`
 in roughly three removals.
 
-The first version of that experiment was invalid, and catching why mattered
-more than the result: the debug overlay — a diagnostic that *draws* the
-tracker's output — was in the same condition that decided whether the tracker
-*ran*. A diagnostic was causing the work it was meant to observe. Left as-is,
-switching both features off would have shown no change and I would have
-concluded the tracker was innocent.
-
 ### The result that inverted my expectation
 
 Switching the tracker to fp16 made each pass **2.4× faster** and did not make
