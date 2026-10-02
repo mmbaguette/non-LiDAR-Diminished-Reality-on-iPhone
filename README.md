@@ -2,15 +2,10 @@
 A diminished reality (DR) app that reprojects camera pixels and uses image inpainting to make real 3D objects disappear on an iPhone augmented reality (AR) app.
 
 Removing a real object from a live camera view, convincingly, completely offline,
-on an iPhone 13. 
-
-This experience taught me to use coding agents to build projects beyond what I could have accomplished alone.
+on an iPhone 13. This experience taught me to use coding agents to build projects beyond what I could have accomplished alone. 
 
 Documentation only — no source is published. Implementation was written with AI
-assistance. What is mine, and what this document records, is the constraint
-choice, the model and approach selection, the experimental design, the
-measurements, and the thermal and memory engineering. Every figure here was
-measured on device unless marked as offline.
+assistance.
 
 ## Contents
 
