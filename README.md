@@ -93,8 +93,6 @@ tests ([§5](#5-evaluation)): the mask has to be grown to swallow adjacent fine 
 printed text, and masks of neighbouring objects have to be subtracted so the
 fill does not eat an object that is only partly covered.
 
-These were the coding agent's design choices based on the testing I performed.
-
 ### Inpainting
 
 The quality reference and the commercial candidates are different methods, and
@@ -121,6 +119,8 @@ structure. LaMa reproduces structure, which is what floors and walls mostly
 are — and cannot ship ([§6](#6-licensing-and-patents)). So LaMa is kept as the quality ceiling: the thing
 the commercial fills are measured against, not the thing tuned for.
 
+￼
+
 The on-device inpainting figures in [§9](#9-benchmarks) are LaMa, converted to Core ML at three
 resolutions.
 
@@ -138,8 +138,6 @@ is needed *once*, at removal, to establish which surface an object stands on
 (this should solve the undetected-surfaces failure in [§5](#5-evaluation)). A
 one-shot question needs no temporal stability and no per-frame budget, which is
 a far easier problem.
-
-These were the coding agent's design. 
 
 ---
 
@@ -205,7 +203,6 @@ change either. Gating on translation *or* rotation — turning in place moves th
 camera nowhere while changing everything the occlusion depends on — cut tracker
 invocations roughly **4×** in handheld use.
 
-This was the coding agent's decision.
 
 ### Load scheduling
 
@@ -220,8 +217,6 @@ A measurement artefact hid the real number for several rounds: **reinstalling
 the app invalidates that cache**, so every timing taken right after an install
 reads cold. The warm figure only appeared once a build was relaunched without
 reinstalling.
-
-This was the coding agent's design.
 
 ### Outcome
 
