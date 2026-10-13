@@ -1,539 +1,222 @@
-# non-LiDAR-Diminished-Reality-on-iPhone
-A diminished reality (DR) app that reprojects camera pixels and uses image inpainting to make real 3D objects disappear on an iPhone augmented reality (AR) app.
+# Diminished Reality (DR) on iPhone without LiDAR
 
-Removing a real object from a live camera view, convincingly, completely offline,
-on an iPhone 13. This experience taught me to use coding agents to build projects beyond what I could have accomplished alone. 
+An iPhone app that makes a real object disappear from the live camera view. Tap an object and the app removes it, fills in what was behind it, and keeps it gone as you walk around.
 
-Documentation only — no source is published. Implementation was written with AI
-assistance.
+It runs fully offline on an iPhone 13, which has no LiDAR depth sensor, so every bit of 3D information comes from a single camera.
 
-## Contents
+*Documentation only, no source published. I led the design, testing, model selection and licensing decisions; the Swift code was written by AI coding agents.*
 
-1. [Problem and constraints](#1-problem-and-constraints)
-2. [Pipeline](#2-pipeline)
-3. [Model and approach selection](#3-model-and-approach-selection)
-4. [Thermal and memory budgeting](#4-thermal-and-memory-budgeting)
-5. [Evaluation](#5-evaluation)
-6. [Licensing and patents](#6-licensing-and-patents)
-7. [Retrospective](#7-retrospective)
-8. [Skills](#8-skills)
-9. [Benchmarks](#9-benchmarks)
+<img width="350" alt="Water bottle removed on device" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
+
+*(**TODO**: replace with mp4 of an oddly-shaped object covering multiple planes) A water bottle removed on device. Green: area filled in by inpainting. Red: area restored from real camera pixels seen earlier.*
 
 ---
 
-## 1. Problem and constraints
+## Constraints
 
-Diminished reality is the inverse of AR: remove a real object and show what is
-behind it. It has to stay gone as the camera moves, the revealed surface has to
-look like a surface, and the illusion has to survive something passing in front.
-
-I picked constraints that remove the usual shortcuts:
-
-- **No network.** Everything on device. Rules out server-side inpainting, which
-  is how most convincing demos of this are made.
-- **iPhone 13 — no LiDAR.** The central constraint. Every piece of geometry
-  must be inferred from one moving RGB camera plus device motion. LiDAR phones
-  get this free.
-- **4 GB RAM device.** The process is killed near **2.1 GB** of footprint. Weights,
-  full-resolution frames and cached results all compete inside that.
-- **60 fps preview**, regardless of what else runs.
-- **Commercially clean.** Every shipped component must be usable commercially
-  without negotiation, with no budget for model training or legal counsel.
-  This removed the best-performing inpainting model from contention ([§3](#3-model-and-approach-selection), [§6](#6-licensing-and-patents)).
+- **Offline.** No server. The most convincing demos of DR rely on cloud computing.
+- **iPhone 13, no LiDAR.** Depth and surfaces have to be estimated from the camera and motion sensors alone.
+- **4 GB of RAM.** iOS kills the app at about 2.1 GB, and AI inferencing takes up most of that.
+- **60 fps preview**, no matter what else is running.
+- **No prior scanning.** The app has no idea what exactly is behind an object, and must try its best to guess what backgrounds look like.
+- **Under 3 s of delay** from tap to removal (met with the shippable fill methods and when the phone isn’t hot).
+- **Commercially usable.** Every model and algorithm had to be legal to ship in a paid product, without licensing deals.
 
 ---
 
-## 2. Pipeline
-
-**At removal:** resolve the tap to a mask of a segmented foreground object on the screen; find the surface it
-rests on; synthesise the hidden background once; project that background onto the surface
-in world space so it stays put as the camera moves.
-
-**Every frame after:** track the object, so it is never drawn back over its own
-replacement; composite anything passing in front; replace invented pixels with
-real ones as motion reveals the surface; correct for the camera's changing
-exposure; blend the seam.
-
-At 60 fps there are 16.7 ms per frame, and camera
-tracking already takes part of that. So the steady-state loop is kept to a
-reprojection and a composite, and everything expensive — segmentation,
-inpainting, surface finding — happens as a one-shot event at the tap, where a
-few seconds is acceptable. Re-synthesis of the background happens rarely, on a
-large viewpoint change, never continuously, because each replacement risks
-visible drift.
-
-Surfaces are detected planes. An object can span several, so the synthesised
-background is split across all the planes it covers. A tall object viewed at an
-angle hides more of the floor behind it than its footprint, so the replaced
-region is extended by a margin derived from object height and viewing angle.
-
-
+## Objectives
+- **Design for as many objects as possible** to be removed. Bottles, boxes, furniture, cars.
+- **Design for as many scenes as possible** such as a tall bottle on a coffee table, a large couch in a living room, or construction pylons on a road.
+- **Keep processing time minimal** to keep the user engaged without sacrificing quality to the point that removals no longer look convincing.
 ---
 
-## 3. Model and approach selection
+## Prior work, and why I built my own
 
-### Segmentation
+I found no app that removes any object the user picks from a live camera feed on a phone without LiDAR. What exists is outdated research implementations, commercial products that handle one kind of object, or photo editors.
 
-**Rejected Apple Vision alone.** It is the obvious choice: free, fast, no
-conversion. It is a detector, not a tracker — no memory, no concept of which
-object the user picked. On device it returned nothing on **45% of passes**, and
-often returned the wrong object. Everything built to compensate was scaffolding
-around that.
-
-**Selected EdgeTAM** (Segment Anything 2 for edge devices) for tracking, and
-kept Vision for one job: resolving the initial tap to an instance. A measured
-comparison found Vision better at that specific task, so both are used where
-each is stronger. EdgeTAM's decisive property is that it is promptable and
-stateful — told once which object was chosen, it holds that object across
-frames, and it reports absence as distinct from failure. Acting on that
-distinction is what stops the object being painted into its own replacement.
-
-Two mask requirements came out of inpainting tests rather than segmentation
-tests ([§5](#5-evaluation)): the mask has to be grown to swallow adjacent fine detail such as
-printed text, and masks of neighbouring objects have to be subtracted so the
-fill does not eat an object that is only partly covered.
-
-### Inpainting
-
-The quality reference and the commercial candidates are different methods, and
-this is the section where that matters most.
-
-I compared candidates offline on still photographs of real scenes before
-anything ran on the phone. Criteria: quality on large holes over texture and
-over structure (floor edges, material joins), and whether the method *and* its
-weights could ship commercially.
-
-| Method | Result | Status |
+| Prior work | What it does | Why I didn't build on it |
 | --- | --- | --- |
-| Classical diffusion (Telea, Navier–Stokes) | Unacceptable blur on large holes over texture | Rejected on quality |
-| Criminisi exemplar-based | Worked well on the test scenes | Commercial candidate |
-| OpenCV shift-map (`xphoto`) | Worked well; produced artefact lines next to fine text unless the mask was grown | Commercial candidate |
-| LaMa | Best quality; handles large masks and periodic structure | Reference only — weights not commercially clean |
-| MI-GAN | Light AI inpainter; poor, distracting infills in each test | Reference only — same training-data issue as LaMa |
-| PatchMatch | slow, but effective | Rejected — patent live to ~2029 |
-| G'MIC | unacceptable quality compared to other patch matching algorithms  | Rejected — copyleft licence blocks closed-source use |
-| PixMix (Herling & Broll) | Not implemented as a fill method. | Rejected — see [§6](#6-licensing-and-patents) |
+| [PixMix, Herling & Broll (2010–2012)](https://ieeexplore.ieee.org/abstract/document/6402551) | Real-time object removal with no pre-scan of the room. Re-fills every frame at 17–25 fps (640×480) on a laptop CPU, not a phone | Assumes an almost flat background, and the authors say it can't handle background revealed by walking around a 3D object. No official published code. Its patents lapsed but didn't expire. |
+| ViewAR SDK | Removes an object covering one flat surface such as a wall, so a product can be placed there | Commercial business tool for one object type on a flat wall |
+| IKEA Kreativ | Erases furniture from a photo of a room | Still photos, not a live feed |
 
-Classical fills are cheap and unencumbered but reproduce texture rather than
-structure. LaMa reproduces structure, which is what floors and walls mostly
-are — and cannot ship ([§6](#6-licensing-and-patents)). So LaMa is kept as the quality ceiling: the thing
-the commercial fills are measured against, not the thing tuned for.
+**Why from scratch:**
 
-￼
-
-The on-device inpainting figures in [§9](#9-benchmarks) are LaMa, converted to Core ML at three
-resolutions.
-
-The intended auto-selection strategy between the two commercial fill algorithms, Criminisi and OpenCV shift-map, 
-is driven by the pixels around
-the hole: gradient energy and local variance measured on the known ring of
-pixels around the mask choose between diffusion (smooth surroundings) and an
-exemplar method (repeating texture). Though this hasn't been implemented yet.
-
-### Depth
-
-**Depth Anything V2 Small** is Apache 2.0, the Large variant CC-BY-NC
-and therefore unusable commercially. The scope is deliberately narrow — depth
-is needed *once*, at removal, to establish which surface an object stands on 
-(this should solve the undetected-surfaces failure in [§5](#5-evaluation)). A
-one-shot question needs no temporal stability and no per-frame budget, which is
-a far easier problem.
+1. **Nothing fits the goal.** The open DR code is desktop research code, and each commercial product handles one object type.
+2. **ARKit changes the design.** ARKit tracks the phone's position and detects surfaces every frame, which was the hardest problem in older systems. A design built on that is different enough that adapting older code would have meant rewriting most of it.
+3. **Licensing.** Every component also had to be commercially usable, which rules out most existing code and model weights (see [Licensing and patents](#licensing-and-patents)).
 
 ---
 
-## 4. Thermal and memory budgeting
+## How it works
 
-The hardest part of the project, and where measurement repeatedly overturned
-reasoning — including mine.
+1. **Tap:** the app outlines the object you tapped (segmentation).
+2. **Fill:** it paints in the background hidden behind the object (inpainting).
+3. **Pin:** it places that fill, called the *plate*, on the floor or table in 3D, so it stays in place as the camera moves. If the object covers more than one surface, like a corner where a wall meets the floor, the plate is split across every surface it covers.
+4. **Track:** every frame, it follows the object so it never shows through its own fill, and swaps in real pixels as the camera sees more of the hidden area.
 
-### The constraint that shapes the rest
+The slow steps (segmentation and inpainting) run once at the tap, where a short wait is fine. The per-frame work is kept light to maintain 60 fps.
 
-**The Neural Engine is fp16-only.** Any model kept at fp32 for numerical
-reasons runs on CPU and GPU instead. That one fact determined most of the
-thermal behaviour below.
+**Segmentation models:** Apple Vision picks and outlines the tapped object, then EdgeTAM (a lightweight model that keeps tracking the same object frame to frame) follows it at 2 Hz. Vision alone returned nothing on half of attempts and couldn’t remember which object you picked.
 
-### Where the memory goes
+---
 
-The process dies near **2.1 GB**. Inpainting weights are **196–207 MB each**;
-the five-stage tracker is **76 MB at fp32**, **40 MB at fp16**. Materialised and
-specialised for a compute unit they occupy considerably more than file size. One
-removal takes the process from a **155–272 MB** idle baseline to **866 MB**,
-settling near 640 MB.
+## In-app settings
 
-The assumption worth discarding early was that retained image data — cached
-frames, textures, debug imagery — was the bulk. It is not; those are tens of
-megabytes. Weights dominate by roughly an
-order of magnitude.
+![In-app inpainting settings](./Images/settings-panel.jpg)
 
-### Isolating the heat source
+Every major behaviour can be switched or tuned live on the phone, which made on-device testing much faster than rebuilding the app for each change. The most important ones:
 
-Above the lowest thermal state the system clamps clocks and everything slows at
-once: rendering halves from **60 to 30 fps**, inference roughly triples. That
-makes every timing suspect, and I lost a day to it before logging thermal state
-alongside every measurement.
+| Setting | What it does |
+| --- | --- |
+| **Show live scene through the plate** | Makes only part of the plate solid where the object's silhouette still covers it, and transparent everywhere else, so the live camera shows through. |
+| **Recover real pixels** | As you move, invented pixels in the plate are permanently replaced with the real surface wherever the object no longer blocks the view. |
+| **Tracker precision (fp32 / fp16)** | fp32 is more accurate but can't use the Neural Engine. fp16 runs on the Neural Engine and runs cooler, at a small cost in accuracy (see [Benchmarks](#benchmarks)). |
+| **Inpainting backend** | Picks the fill method: Hybrid XPhoto, Criminisi, LaMa (test only), OpenCV Diffusion. Hybrid XPhoto uses OpenCV xphoto, detects leftover artifacts, and repairs them with a diffusion fill. |
+| **Mask dilation** | Grows the object's outline by a few pixels so its shadow and edges are removed too. |
+| **Angle coverage** | Grows the plate by how far the object can lean out as you circle it, so tall objects get a larger plate. |
 
-**I isolated the cause by A/B rather than inference.** The tracker's output
-feeds two features; with both switched off, so the tracker does not run between
-removals, the thermal state barely climbs. With either on it reaches `serious`
-in roughly three removals.
+---
 
-### The result that inverted my expectation
+## Keeping it cool and within memory
 
-Switching the tracker to fp16 made each pass **2.4× faster** and did not make
-the device cooler. I was prepared to conclude fp16 did not help thermals.
+Phones slow themselves down when they heat up. Once the iPhone hit its "serious" thermal state, the preview dropped from 60 to 30 fps and AI processing became about 3× slower. I started logging the thermal state with every measurement, then switched features on and off one at a time to find the cause: the object tracker.
 
-Counting invocations instead of reading the temperature showed the opposite.
-The tracking loop was single-flight and nothing more — it relaunched the instant
-the previous pass returned. **Single-flight is not a throttle.** Making the
-model faster did not reduce work; it raised the rate until something else
-became the limit. Across two matched runs, fp16 ran **~780 passes where fp32
-ran ~180** — four times the tracking for slightly more heat.
+**The iPhone's Neural Engine only runs fp16.** The Apple Neural Engine (ANE), the iPhone's dedicated AI chip, only accepts 16-bit models. Any model kept at 32-bit runs on the CPU and GPU instead, which use more power and produce more heat. That one fact explains most of the thermal behaviour below.
 
-So fp16 is far more efficient per unit of work, and the application was spending
-the entire gain on frequency. It also means **comparing two precisions without a
-rate cap compares nothing**, because each saturates whatever it is capable of. A
-**2 Hz ceiling** fixed both. fp32 sits below that ceiling unaided, so the cap
-only binds the faster configuration — the correct asymmetry.
+Converting the EdgeTAM tracker model from 32-bit to 16-bit neural weights (fp32 to fp16) made each run 2.4× faster. Counting how many times it ran explained the rest: the tracker restarted as soon as it finished, so the faster model simply ran about 4× as often and spent the savings. Capping it at 2 runs per second, and skipping it when the camera hadn't moved, fixed that.
 
-### Duty cycle
-
-The geometry the tracker maintains lives in world space and the rendering that
-consumes it is a function of camera pose, so a camera that has not moved cannot
-change either. Gating on translation *or* rotation — turning in place moves the
-camera nowhere while changing everything the occlusion depends on — cut tracker
-invocations roughly **4×** in handheld use.
-
-
-### Load scheduling
-
-Neural Engine weight compilation is device-specific — it targets a particular
-Neural Engine revision, so it cannot be done on a development machine and
-shipped. The fp16 set costs **13.6–17.0 s** cold and **6.0 s** with the
-device's compilation cache warm, against **1.5–2.2 s** for fp32. Loading it in
-the background at launch moves that into time the user already spends aiming
-the camera.
-
-A measurement artefact hid the real number for several rounds: **reinstalling
-the app invalidates that cache**, so every timing taken right after an install
-reads cold. The warm figure only appeared once a build was relaunched without
-reinstalling.
-
-### Outcome
-
-From the first removal, both starting from the lowest thermal state:
-
-| | fp32 | fp16 |
+| Tracker | fp32 | fp16 |
 | --- | --- | --- |
-| Time to `serious` | ~3:30 | ~6:00 |
-| Passes in that window | ~180 | ~780 |
-| Peak footprint | 931 MB | 677 MB |
+| Time per run | ~500 ms | ~208 ms |
+| # of runs in a ~9.5 min test (uncapped) | ~180 | ~780 |
+| Time until _serious_ thermal state | ~3.5 min | ~6 min |
+| Peak memory | 931 MB | 677 MB |
 
-Twice the endurance for four times the work, at lower peak memory — the latter
-with *more* removals performed, which is the opposite of what plate count would
-predict, leaving the larger fp32 weights as the explanation.
-
-Two runs, different objects, different removal counts — individually solid, not
-a controlled comparison. The invocation counts make the direction unambiguous;
-the absolute times are weaker.
-
-The device also sheds heat about as fast as it gains it: down a level within
-~10 s, full frame rate within a minute.
+**Pre-warming.** The first time an fp16 model loads, iOS compiles it for that device's specific Neural Engine, so this can't be done ahead of time on a Mac. That first load takes 13.6–17.0 s (6.0 s once cached), against 1.5–2.2 s for fp32. Loading it in the background at launch hides the wait in time the user already spends aiming the camera.
 
 ---
 
-## 5. Evaluation
+## Evaluation
 
-Two stages. Offline, on still photographs, to choose an inpainting method
-before running anything on the phone. Then manual, on device, against real
-scenes. 
+### Choosing an inpainting method (offline)
 
-### Offline inpainting comparison
+Before putting anything on the phone, I made a desktop test tool and compared fill methods on real photos: a wood deck, wallpaper, a desk with paper documents, and a group of plant pots. The goal was to generate an infill plausible enough that it was not distracting to the user.
 
-Scenes: a wood deck, wallpaper, an office desk with printed text, and a cluster
-of plant pots — chosen to cover periodic texture, fine high-contrast detail and
-objects crowding the target.
+| Method | Result | Decision |
+| --- | --- | --- |
+| Telea / Navier–Stokes (Diffusion) | Blurry smear on large holes | Rejected |
+| **Criminisi** | Good on smooth, textureless surfaces | Shippable |
+| **OpenCV xphoto (shift-map)** | Best on surfaces covered with a pattern like wallpaper | Shippable |
+| LaMa (AI) | Best quality | Benchmark only, weights not cleared for commercial use |
+| MI-GAN (AI) | Poor, distracting fills | Rejected |
+| PatchMatch | Good but slow | Rejected, patented until ~2029 |
 
-- **Diffusion broke** on every large hole over texture — a smooth smear.
-- **Shift-map produced artefact lines next to text.** The fix was on the mask,
-  not the fill: grow the mask until it swallows adjacent fine detail.
-- **Fills ate partly covered neighbours.** In the plant-pot scene the fill
-  sampled from, and overwrote, pots touching the target. Subtracting
-  neighbouring objects' masks fixed it.
-- **Criminisi and shift-map held up** on the test scenes; LaMa was better on
-  structure, as expected.
+![Criminisi inpainting test](./Images/criminisi-test.jpg)
+
+*Criminisi test: two TV remotes masked (left) and removed (right). The table texture fills well, but the fill breaks into distinct blocks where the patch of sunlight crosses the hole.*
+
+![OpenCV xphoto inpainting test](./Images/xphoto-test.jpg)
+
+*OpenCV xphoto in my test tool: a jar masked against patterned wallpaper (left) and removed (right). The repeating floral pattern is rebuilt, with a faint seam where the stripes meet.*
+
+Two lessons from these tests: **dilate the mask** to engulf small details like printed text on paper, and **cut out neighbouring objects' masks** so the fill doesn't copy or erase them.
 
 ### On device
 
+**Working:**
+- Simple objects (cups, bottles, boxes)
+- Odd shapes. Headphones and a pump bottle flickered because the 3D shape model assumed simple convex blobs. Replaced with a height-map model.
+- Objects covering several surfaces at once, such as a wall corner and the floor (tested with up to 17 detected surfaces in a scene and an object spanning 3).
+- Recovering after the phone overheated.
 
-<img width="350" alt="Water bottle removal: diffusion fill at the base, real-pixel reprojection behind it" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
-
-*DR on a water bottle, with cheap diffusion inpainting where its bottom covers the floor (green), and real-pixel reprojection where its tall silhouette previously covered the rest of the ground (red).*
-
-
-**The test that mattered most was object variation**. Simple convex objects —
-cups, bottles, boxes — worked consistently. Flicker appeared
-only on a lotion bottle with a pump on top and on headphones. By varying object shape
-while holding everything else fixed, I established the failure tracked
-*geometry*, not the recent changes I had been blaming. 
-
-That killed the representation: a single convex volume cannot express a band
-arching over an open gap, or a wide body with a narrow nozzle. No margin makes a
-convex hull concave — increasing it swallowed more scene while still leaving the
-object visible through its own replacement. Replacing it with a per-cell height
-model carved from successive segmentations resolved both, verified visually:
-complete coverage, no artefacts.
-
-The per-cell height model was my coding agent's design. Side view of the lotion bottle, one row per unit of height:
-
-```
-               ######         nozzle
-               ######
-               ######
-               ######
-            ############
-            ############      body
-            ############
-            ############
-            ############
-       ────────────────────── support plane
-   cell:  1  2  3  4  5  6
-
-Convex hull: one volume around the whole object
-
-               ######
-              .######.
-             ..######..       . = scene covered by the hull
-            ...######...      but not by the object
-            ############
-            ############
-            ############
-            ############
-            ############
-       ────────────────────── support plane
-
-Per-cell height model: one height per cell
-
-   cell:  1  2  3  4  5  6
-   h:     0  5  9  9  5  0
-
-   Nozzle cells store the nozzle top (9), shoulder
-   cells store the body top (5), empty cells store 0.
-   The step from 5 to 9 is what a hull cannot keep.
-```
-
-
-**Held up — multiple planes**, including scenes with **17 detected planes** and
-the object spanning 3. **Held up — thermal degradation and recovery.**
-
-**Broke — undetected surfaces.** An object on a
-table the device never detected produces a removal projected onto the *floor*.
-Signature: **one detected plane**, zero surfaces rejected, object height
-measured at **0.45–0.61 m** — its height above the floor, not the table.
-
-I spent two iterations fixing surface *selection* before establishing that
-selection was working correctly and the correct surface under the object wasn't being detected to be
-selected. The gates I added were right and changed nothing. Distinguishing "the
-logic chose wrongly" from "the input was absent" is the lesson, and it is what
-started the depth work.
-
-**Broke — objects near the target.** Nearby surfaces were getting their own
-removal region on ray votes alone. The separating signal is whether the object
-*rises above* that surface: one standing a centimetre above a plane is behind
-it, not on it, and the rays that voted passed the object rather than being
-blocked by it.
-
-**Broke — varying lighting.** I traced the plates glowing to the exposure
-correction, and the failure is a feedback loop: the gain is measured against the
-region it then writes into, so a bright region measures bright, is written
-brighter, and measures brighter still until a clamp stops it. The correct reference is the
-surrounding photographed content, not the output. Disabled and documented as
-broken rather than removed.
+**Broken, and why:**
+- **People walking in front of removed objects**. ARKit's `.personSegmentation` sometimes falsely recognizes humans, causing part of the object to reveal through its own fill. Now off by default. 
+- **Missed surfaces.** If the phone never detected the table, an object on it was removed as if it sat on the floor. I first tried to fix how surfaces were chosen, before realizing the right surface was never detected at all. This is why I'm adding a depth model: Depth Anything V2 Small.
+- **Changing light.** The brightness correction function fed back on itself and made the fill glow. It's turned off for now.
 
 ---
 
-## 6. Licensing and patents
+## Licensing and patents
 
-I constrained the work to components usable commercially without negotiation,
-applied from the start. License checks were done per model/algorithm
-at selection time, not deferred to release: a commercial blocker found late costs the
-development built on top of it. This is a record of engineering decisions, not
-legal analysis.
+Shipping commercially meant checking every component myself against primary sources:
 
-**Model weights are licensed separately from model code — and training data
-separately from both.** A permissive repository licence says nothing about the
-weights it downloads. Two cases from this project:
+- **Model weights have their own licence.** 
+    - LaMa's code is open, but its weights were trained on the Places2 image dataset which is non-commercial use only.
+    - Depth Anything V2 allows commercial use in its small version but not its large one.
+- **Algorithms can be patented.** I checked each method on Google Patents. The patents on Criminisi and shift-map have lapsed; the xphoto version's application was never granted. PatchMatch is patented until about 2029, so I didn't use it.
 
-- One depth model is Apache 2.0 in its small variant and CC-BY-NC (Creative Commons Non-Commercial) in its large
-  one — same architecture, same authors, same repository, one of them unusable.
-- LaMa's code is permissively licensed, but its weights are not stored in its
-  repository; they are downloaded from a third-party host. They were trained on
-  Places2, whose Creative Commons licence covers the dataset authors'
-  classification models, not the images — the dataset states that copyright in
-  the images stays with their owners. I checked this against the dataset's own
-  pages after being told, by another AI assistant, that the weights were clean
-  because the dataset was Creative Commons. The claim had the licence's scope
-  backwards. MI-GAN has the same training-data problem.
-
-Check the checkpoint and what it was trained on, not the project.
-
-**Algorithmic patents outlive the papers.** Several well-known inpainting
-techniques were patented by their originating institutions. Being published,
-widely implemented, and shipped inside a popular open-source library does not
-settle the question, though those three facts are often cited as though they do.
-I restricted selection to methods whose patents are expired, lapsed, or were
-never granted, verified against patent records:
-
-| Method | Patent | Status |
-| --- | --- | --- |
-| Criminisi exemplar-based | US6987520B2 (Microsoft) | Lapsed 2018-02-12 for non-payment of maintenance fees |
-| Shift-map (Pritch / Peleg) | US8249394B2 (Yissum) | Lapsed 2020-09-28 for non-payment of maintenance fees |
-| Shift-map as implemented in OpenCV `xphoto` (cites He & Sun 2012) | US20140369622A1 (Microsoft) | Application abandoned; never granted |
-| PixMix-related (Herling & Broll) | US9412188B2 | Lapsed 2024-09-16 |
-| PixMix-related (Herling & Broll) | US8660305B2 | Lapsed 2026-03-30 |
-| PatchMatch (Adobe) | - | Live to ~2029 — not used |
-
-**Lapsed is not the same as expired.** A patent that has run its full term is
-finished. One that lapsed for unpaid fees can, in some circumstances, be
-reinstated. I accepted lapses that are years old and treated PixMix as
-off-limits because its most recent family member lapsed months before I
-checked. It cost little: only three ideas from the paper were used, none
-of them its fill method.
-
-**Implementation licences are a separate check from method patents.** The
-shift-map patent being clear says nothing about the code. The OpenCV module
-that implements it carries a 3-clause BSD notice in its header inside a
-repository licensed Apache 2.0. Both permit commercial use; only Apache 2.0
-includes an explicit patent grant.
+---
+## What's next
+- Adding a depth model for better surface detection (see [On device](#on-device) Evaluation).
+- Testing multiple diminished objects. Seeing how many objects can disappear at once while checking RAM and thermal state.
+- Full scene reconstruction for 3D-aware infills.
 
 ---
 
-## 7. Retrospective
+## What I learned
 
-**Measurement beat reasoning, repeatedly, and I learned to distrust the
-reasoning first.** A performance problem was attributed to build configuration
-and written up as such; the configuration had always been correct, and the real
-cause was per-frame geometry work on the main thread. It was confirmed by a
-symptom nobody predicted — a settings menu freezing on tap, in a part of the app
-with nothing to do with rendering. Separately, a numerical drift figure (0.98
-correlation at fp16 against 7e-5 at fp32) predicted visible tracking
-degradation twice on EdgeTAM. It never appeared: that figure describes error appearing
-along a continuous track, and every real session had removals in between, each
-resetting the model's memory. The figure was right; the inference about real
-usage was not.
-
-**Under-instrumented for too long.** Conclusions had to be discarded because the
-logs could not support them. Thermal state without timings is uninterpretable. Log lines without elapsed time cannot answer
-"how long until it throttles," and I caught that question being answered anyway,
-from a line count times an assumed interval. Both were one-line fixes that
-should have existed before the first measurement.
-
-**Test conditions don't always represent baseline performance.** A debug overlay defaulting to on meant every
-session, including every measurement session, paid for it — and because it was on
-during all of them, its cost to memory and thermal state looked like baseline performance. 
-
-**What I would do differently:** instrument thermal state, elapsed time and
-invocation counts on day one; test the non-convex object first, since it
-invalidated an entire geometric representation and everything built on it;
-check whether a required input exists before improving the logic that selects
-among inputs; and make the shippable component the default from the first build
-so the reference model can only be reached manually.
+- **Search prior art** to find out what methods currently work, what code, algorithms or SDKs are already published, or what did not work in the past but can finally be tested with today's advances.
+- **Plan and prototype together, then optimize** to discover what's possible on the current most popular phones and develop your roadmap around that. This helps avoid technology barriers later.
+- **Test the harder cases from the start.** One odd-shaped object invalidated a whole approach.
+- **Build natively for the target device.** Porting ML models to CoreML instead of ONNX and using fp16 weights let them run on ANE. Measuring with released builds, not debug builds, gives realistic timings.
+- **Take the lead when developing with agents.** Agentic coding let me build something much larger than I could have alone. By prompting it to teach the concepts that are new to me in this project, I had a clearer view of where to steer it. My main job was setting the goals, testing on device, and deciding what to keep.
+- **Check for licenses and patents**: model weights have their own separate licenses from the code, and software algorithms can be patented. Do a basic freedom-to-operate check.
 
 ---
 
-## 8. Skills
+## Benchmarks
 
-- **Agentic coding** to achieve things beyond what I could have accomplished alone.
-- **Computer vision under hard constraints** — segmentation, stateful tracking,
-  inpainting, plane estimation, occlusion, and the trade-offs between them on a
-  fixed compute and memory budget.
-- **Model selection on measured behaviour** rather than published benchmarks,
-  including rejecting the obvious choice with evidence, and separating the
-  quality reference from what can ship.
-- **Mobile neural network deployment** — Core ML conversion, weights precision
-  trade-offs, and Neural Engine constraints.
-- **Performance engineering under thermal and memory limits** — duty cycling,
-  rate limiting, load scheduling, and the instrumentation that makes any of it
-  measurable.
-- **AR and 3D geometry** — camera projection, homography, plane detection,
-  raycasting, coordinate spaces, volume from silhouettes.
-- **Licensing and IP as a design constraint** — patent searching, implementation
-  licences, and weight and training-data checked separately and
-  against primary sources.
+iPhone 13 (A15 chip, 4 GB RAM, no LiDAR), release builds.
 
----
-
-## 9. Benchmarks
-
-iPhone 13 (A15, 4 GB, no LiDAR), release builds.
-
-### Platform
+### Phone
 
 | Metric | Value |
 | --- | --- |
-| Footprint budget before termination | ~2.1 GB |
-| Idle footprint | 155–272 MB |
-| After one removal | 866 MB, settling ~640 MB |
-| Render rate, lowest two thermal states | 60 fps |
-| Render rate, `serious` | 30 fps |
-| Recovery from `serious` | ~10 s down a level, ~1 min to full rate |
+| Memory limit before iOS kills the app | ~2.1 GB |
+| Memory at idle | 155–272 MB |
+| Memory after one removal | 866 MB, settling to ~640 MB |
+| Frame rate, normal | 60 fps |
+| Frame rate, _serious_ thermal state | 30 fps |
+| Recovery from _serious_ | ~10 s to drop a level, ~1 min to full frame rate |
 
-### Tracker, fp32 vs fp16
+### Tracker (EdgeTAM), fp32 vs fp16
 
-| Metric | fp32 | fp16 |
+| Stage | fp32 | fp16 |
 | --- | --- | --- |
 | Image encoding | ~175 ms | ~38 ms |
 | Memory attention | ~240 ms | ~90 ms |
 | Mask decoding | ~50 ms | ~45 ms |
 | Memory write | ~35 ms | ~35 ms |
-| **Per pass** | **~500 ms** | **~208 ms** |
-| Model set on disk | 76 MB | 40 MB |
-| Cold load | 1.5–2.2 s | 13.6–17.0 s |
-| Warm load | - | 6.0 s |
-| Passes in ~9.5 min, uncapped | ~180 | ~780 |
-| Effective rate, uncapped | 0.31 Hz | 1.37 Hz |
-| First removal to `serious` | ~3:30 | ~6:00 |
-| Peak footprint | 931 MB | 677 MB |
-| Correlation vs reference | 7e-5 match | 0.98 |
+| **Total per run** | **~500 ms** | **~208 ms** |
+| Model size on disk | 76 MB | 40 MB |
+| First load | 1.5–2.2 s | 13.6–17.0 s |
+| Cached load | – | 6.0 s |
+| Match to original PyTorch model | ~7e-5 error | 0.98 correlation |
 
-Per-stage fp32 sizes: 22, 21, 19, 9, 5 MB.
+### Inpainting
 
-### Inpainting — reference model (LaMa)
-
-| Resolution | Weights | Cold | Thermally throttled |
+| Method | Resolution | Time (cool) | Time (hot / throttled) |
 | --- | --- | --- | --- |
-| 512 | 196 MB | 2.97 s | 7.24 s |
-| 800 | 207 MB | 8.56 s | 24.6–29.9 s |
-| 1024 | 196 MB | to-do | to-do |
+| Criminisi | 512 px | 0.7–2 s | – |
+| OpenCV xphoto (shift-map) | 512 px | 1.5–2 s | – |
+| LaMa (reference only) | 512 px | 2.97 s | 7.24 s |
+| LaMa (reference only) | 800 px | 8.56 s | 24.6–29.9 s |
 
-800 and 1024 are restricted to devices above 4 GB. 800
-peaks at **1.2–1.4 GB** against a ~2.1 GB budget and triggers system memory
-warnings mid-inference, causing ANE to abandon processing.
+LaMa at 800 px peaks at 1.2–1.4 GB of memory, which triggers iOS memory warnings mid-run, so it's limited to phones with more than 4 GB.
 
-### Inpainting — commercial candidates
+### One removal, step by step
 
-| Method | Time at 512 |
-| --- | --- |
-| Criminisi | 0.7–2 s |
-| Shift-map | 1.5–2 s |
-
-Note: The thermal state (a hot iPhone) dramatically affects processing time.
-
-### Removal stages
-
-| Stage | Time |
+| Step | Time |
 | --- | --- |
 | Frame conversion | 4–32 ms |
-| Instance segmentation (Vision) | 127–343 ms |
-| Surface raycast | 3–10 ms |
-| Full removal at 512 (LaMa) | 3.5–7.6 s |
-| Composite and render | 82–344 ms |
-
-### Segmentation quality
-
-| Metric | Value |
-| --- | --- |
-| Model-reported confidence, typical | 0.96–0.99 |
-| Close-range failure | 0.34 confidence, 0.4% of frame |
-| Vision passes returning nothing | 45% |
+| Object segmentation (Vision) | 127–343 ms |
+| Finding the surface | 3–10 ms |
+| Full removal at 512 px (LaMa) | 3.5–7.6 s |
+| Compositing and drawing | 82–344 ms |
 
 ---
+
+## Built with
+
+Swift · ARKit · Core ML · Apple Vision · EdgeTAM · OpenCV · iPhone 13 (A15, 4 GB)
