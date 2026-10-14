@@ -1,3 +1,6 @@
+
+
+
 # Diminished Reality (DR) on iPhone without LiDAR
 
 An iPhone app that makes a real object disappear from the live camera view. Tap an object and the app removes it, fills in what was behind it, and keeps it gone as you walk around.
@@ -6,9 +9,9 @@ It runs fully offline on an iPhone 13, which has no LiDAR depth sensor, so every
 
 *Documentation only, no source published. I led the design, testing, model selection and licensing decisions; the Swift code was written by AI coding agents.*
 
-<img width="350" alt="Water bottle removed on device" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
+https://github.com/user-attachments/assets/a5e7e125-cd4e-4315-b66f-5e458a34e8f9
 
-*(**TODO**: replace with mp4 of an oddly-shaped object covering multiple planes) A water bottle removed on device. Green: area filled in by inpainting. Red: area restored from real camera pixels seen earlier.*
+*A vase removed from a corner where the wall meets the floor, at 3x speed. The plate is split across both surfaces and real pixels are recovered as the camera moves. The iPhone heated up quicker and slowed down in this demo because of the screen recording.*
 
 ---
 
@@ -123,6 +126,11 @@ Before putting anything on the phone, I made a desktop test tool and compared fi
 Two lessons from these tests: **dilate the mask** to engulf small details like printed text on paper, and **cut out neighbouring objects' masks** so the fill doesn't copy or erase them.
 
 ### On device
+
+
+<img width="350" alt="Water bottle removed on device" src="https://github.com/user-attachments/assets/ed5fd186-19b3-4337-9f25-6d14f6f18e82" />
+
+*A water bottle removed from a floor. Green: area filled in with diffusion-based inpainting. Red: area restored from real camera pixels seen earlier.*
 
 **Working:**
 - Simple objects (cups, bottles, boxes)
