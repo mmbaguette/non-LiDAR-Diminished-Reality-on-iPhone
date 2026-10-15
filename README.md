@@ -17,9 +17,9 @@ https://github.com/user-attachments/assets/a5e7e125-cd4e-4315-b66f-5e458a34e8f9
 
 ## Constraints
 
-- **Offline.** No server. The most convincing demos of DR rely on cloud computing.
+- **Offline.** No server, runs purely on an iPhones processor.
 - **iPhone 13, no LiDAR.** Depth and surfaces have to be estimated from the camera and motion sensors alone.
-- **4 GB of RAM.** iOS kills the app at about 2.1 GB, and AI inferencing takes up most of that.
+- **4 GB of RAM.** iOS kills the app at about 2.1 GB, and AI models are the largest share of the app's memory.
 - **60 fps preview**, no matter what else is running.
 - **No prior scanning.** The app has no idea what exactly is behind an object, and must try its best to guess what backgrounds look like.
 - **Under 3 s of delay** from tap to removal (met with the shippable fill methods and when the phone isn’t hot).
@@ -40,6 +40,7 @@ I found no app that removes any object the user picks from a live camera feed on
 | Prior work | What it does | Why I didn't build on it |
 | --- | --- | --- |
 | [PixMix, Herling & Broll (2010–2012)](https://ieeexplore.ieee.org/abstract/document/6402551) | Real-time object removal with no pre-scan of the room. Re-fills every frame at 17–25 fps (640×480) on a laptop CPU, not a phone | Assumes an almost flat background, and the authors say it can't handle background revealed by walking around a 3D object. No official published code. Its patents lapsed but didn't expire. |
+| [ProPainter (ICCV 2023)](https://github.com/sczhou/ProPainter) | Removes a masked object from recorded video while keeping frames consistent | Works on recorded clips, not a live feed, and is heavy to run. Licensed for non-commercial use only. |
 | ViewAR SDK | Removes an object covering one flat surface such as a wall, so a product can be placed there | Commercial business tool for one object type on a flat wall |
 | IKEA Kreativ | Erases furniture from a photo of a room | Still photos, not a live feed |
 
@@ -117,7 +118,7 @@ Before putting anything on the phone, I made a desktop test tool and compared fi
 
 ![Criminisi inpainting test](./Images/criminisi-test.jpg)
 
-*Criminisi test: two TV remotes masked (left) and removed (right). The table texture fills well, but the fill breaks into distinct blocks where the patch of sunlight crosses the hole.*
+*Criminisi test: two TV remotes masked (left) and removed (right). The table fills well, but the fill breaks into distinct blocks where the patch of sunlight crosses the hole.*
 
 ![OpenCV xphoto inpainting test](./Images/xphoto-test.jpg)
 
@@ -145,9 +146,24 @@ Two lessons from these tests: **dilate the mask** to engulf small details like p
 
 ---
 
+## Limitations
+- **Inpainting time is unpredictable.** Criminisi and xphoto (shift-map) take
+  2–5 s per removal, depending on the image and the size of the hole. Both run
+  only on the CPU, which adds to the device's thermal load. Moving one of them onto the GPU
+  would reduce compute time and let the phone stay cooler longer.
+- **Plane detection without LiDAR misses surfaces.** On the iPhone 13, ARKit
+  traces floors accurately but often misses walls narrower than about 1 m and
+  dark surfaces in bright rooms. When it misses the surface an object rests on,
+  the removal lands on the wrong plane (see [On device](#on-device)). An iPhone 16 Pro
+  Max, which has LiDAR, detected wall cabinets, couches, doors and curtains in
+  the same rooms. A monocular depth model such as Depth Anything V2, which estimates distances from a
+  single image, is my plan to close part of that gap, but not yet tested.
+
+---
+
 ## Licensing and patents
 
-Shipping commercially meant checking every component myself against primary sources:
+Shipping commercially meant I needed to conduct a patent check and read source code licenses:
 
 - **Model weights have their own licence.** 
     - LaMa's code is open, but its weights were trained on the Places2 image dataset which is non-commercial use only.
@@ -155,10 +171,30 @@ Shipping commercially meant checking every component myself against primary sour
 - **Algorithms can be patented.** I checked each method on Google Patents. The patents on Criminisi and shift-map have lapsed; the xphoto version's application was never granted. PatchMatch is patented until about 2029, so I didn't use it.
 
 ---
-## What's next
+
+## Road map
 - Adding a depth model for better surface detection (see [On device](#on-device) Evaluation).
 - Testing multiple diminished objects. Seeing how many objects can disappear at once while checking RAM and thermal state.
+- Implementing iOS 27's [new image segmentation model](https://developer.apple.com/videos/play/wwdc2026/237/).
 - Full scene reconstruction for 3D-aware infills.
+- Person and object occlusion.
+
+---
+
+## Why not train my own AI model for inpainting?
+
+LaMa was the best inpainter during testing: it filled large holes and kept straight
+edges intact. Its code is free for commercial use, but the trained model was
+built from photos its authors don't hold the rights to
+([Licensing and patents](#licensing-and-patents)).
+
+Retraining it on a licensed image dataset, such as Google's Open Images (about 9 million
+photos listed under a commercial-use Creative Commons licence), is possible but
+expensive. Big LaMa has 51 million parameters and took 1,920 GPU-hours to train on 4.5 million images, and 
+one mistake found late during training
+can mean starting over. A smaller model would be cheaper, but MI-GAN, a
+lightweight inpainter built for phones, gave poor fills in every test and still has
+the same licensing problem.
 
 ---
 
@@ -206,8 +242,8 @@ iPhone 13 (A15 chip, 4 GB RAM, no LiDAR), release builds.
 
 | Method | Resolution | Time (cool) | Time (hot / throttled) |
 | --- | --- | --- | --- |
-| Criminisi | 512 px | 0.7–2 s | – |
-| OpenCV xphoto (shift-map) | 512 px | 1.5–2 s | – |
+| Criminisi | 512 px | 1–5 s | – |
+| OpenCV xphoto (shift-map) | 512 px | 1–5 s | – |
 | LaMa (reference only) | 512 px | 2.97 s | 7.24 s |
 | LaMa (reference only) | 800 px | 8.56 s | 24.6–29.9 s |
 
