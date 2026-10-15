@@ -172,15 +172,6 @@ Shipping commercially meant I needed to conduct a patent check and read source c
 
 ---
 
-## Road map
-- Adding a depth model for better surface detection (see [On device](#on-device) Evaluation).
-- Testing multiple diminished objects. Seeing how many objects can disappear at once while checking RAM and thermal state.
-- Implementing iOS 27's [new image segmentation model](https://developer.apple.com/videos/play/wwdc2026/237/).
-- Full scene reconstruction for 3D-aware infills.
-- Person and object occlusion.
-
----
-
 ## Why not train my own AI model for inpainting?
 
 LaMa was the best inpainter during testing: it filled large holes and kept straight
@@ -195,6 +186,15 @@ one mistake found late during training
 can mean starting over. A smaller model would be cheaper, but MI-GAN, a
 lightweight inpainter built for phones, gave poor fills in every test and still has
 the same licensing problem.
+
+---
+
+## Road map
+- Adding a depth model for better surface detection (see [On device](#on-device) Evaluation).
+- Testing multiple diminished objects. Seeing how many objects can disappear at once while checking RAM and thermal state.
+- Implementing iOS 27's [new image segmentation model](https://developer.apple.com/videos/play/wwdc2026/237/).
+- Full scene reconstruction for 3D-aware infills.
+- Person and object occlusion.
 
 ---
 
